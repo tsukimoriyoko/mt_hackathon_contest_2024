@@ -1,27 +1,64 @@
 import os
 import subprocess
-
+import time
+import schedule
+import winreg
+import win32gui
+import win32gui, win32ui
+from ctypes import windll
 from PyQt5.QtCore import QThread
-
 
 class Ability(object):
     def __init__(self, pet):
         self.pet = pet
         self.system = os.name
+        self.cnt = 0
 
-    def fall(self):
-        if self.pet.sender().text() == "开启自由落体":
-            self.pet.autoFalling = True
-            self.pet.sender().setText("关闭自由落体")
+    def openBMW(self):
+        steamPath = self.getSteamPath()
+        gamePath = steamPath + '\\steamapps\\common\\BlackMythWukong\\b1\\Binaries\\Win64\\b1-Win64-Shipping.exe'
+        subprocess.Popen([gamePath])
+        schedule.every(5).seconds.do(self.getScreenShot)
+        self.pet.thread = Thread(app='screenShot')
+        self.pet.thread.start()
+        
+    def getScreenShot(self):
+        try:
+            hwnd = win32gui.FindWindow(None, 'b1  ')
+            hwndDC = win32gui.GetWindowDC(hwnd)
+            mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+            saveDC = mfcDC.CreateCompatibleDC()
+            
+            left, top, right, bot = win32gui.GetWindowRect(hwnd)
+            width = right - left
+            height = bot - top
+            
+            saveBitMap = win32ui.CreateBitmap()
+            saveBitMap.CreateCompatibleBitmap(mfcDC, width, height)
+            saveDC.SelectObject(saveBitMap)
+            
+            result = windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 3)
+            saveBitMap.SaveBitmapFile(saveDC, "D:\\repos\\desktop-pet\\output\\screenshot_%d.jpg" % self.cnt)
 
-        elif self.pet.sender().text() == "关闭自由落体":
-            self.pet.autoFalling = False
-            self.pet.sender().setText("开启自由落体")
+            win32gui.DeleteObject(saveBitMap.GetHandle())
+            saveDC.DeleteDC()
+            mfcDC.DeleteDC()
+            win32gui.ReleaseDC(hwnd, hwndDC)
 
-    def openWechat(self):
-        if self.system == "posix":
-            self.pet.thread = Thread(app="wechat")
-            self.pet.thread.start()
+            print(self.cnt)
+            self.cnt += 1
+        except Exception as e:
+            print(f"GetScreenShot Error: {e}")
+    def getSteamPath(self):
+        try:
+            reg = winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE)
+            key = winreg.OpenKey(reg, r"SOFTWARE\WOW6432Node\Valve\Steam")
+            steam_path, _ = winreg.QueryValueEx(key, "InstallPath")
+            winreg.CloseKey(key)
+            return steam_path
+        except FileNotFoundError:
+            return "Steam installation path not found in registry"
+
 
 class Thread(QThread):
     def __init__(self, app=None):
@@ -29,5 +66,8 @@ class Thread(QThread):
         self.app = app
 
     def run(self):
-        if self.app == "wechat":
-            subprocess.call(["nohup", "/Applications/WeChat.app/Contents/MacOS/WeChat", "&&", "exit"])
+        if self.app == 'screenShot':
+            # time.sleep(15)
+            while True:
+                schedule.run_pending()
+                time.sleep(1)

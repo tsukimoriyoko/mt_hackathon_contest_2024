@@ -1,0 +1,1 @@
+pyinstaller --add-data "img;img" --hidden-import=core.settings -F run.py

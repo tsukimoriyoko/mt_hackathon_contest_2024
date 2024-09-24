@@ -1,6 +1,5 @@
 from importlib import import_module
 
-
 class Settings(object):
     def __init__(self):
         setting_module = import_module("core.settings")
@@ -8,6 +7,5 @@ class Settings(object):
             if setting.isupper():
                 settingValue = getattr(setting_module, setting)
                 setattr(self, setting, settingValue)
-
 
 settings = Settings()
