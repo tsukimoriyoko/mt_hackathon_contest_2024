@@ -8,8 +8,6 @@ from PyQt5.QtCore import (
     QSize,
     QThread,
     pyqtSignal,
-    QMetaObject,
-    Q_ARG,
 )
 from PyQt5.QtGui import QPixmap, QIcon, QPainter
 from PyQt5.QtWidgets import (
@@ -24,22 +22,29 @@ from PyQt5.QtWidgets import (
     QLabel,
 )
 import keyboard
+import requests
+import re
 
 from core import action
 from core.ability import Ability
 from core.conf import settings
 from core.ws_client import WebSocketClient
+from core.sub_windows import SetupGameWidget, ProfileWidget, ResetWidget
+from core.tts import TTS
 
 
 class DesktopPet(QMainWindow):
     def __init__(self, parent=None, tray=False):
         super(DesktopPet, self).__init__(parent)
         self.imgDir = settings.SETUP_DIR / "img"
-        self.tray = tray
+        # self.tray = tray
+        self.tray = True
         self.showOverlay = False
+        self.level = 1
         self.initUI()
-        self.pet.startMovie()
         self.initChat()
+        self.mDragPosition = None
+        # self.tts = TTS()
 
     def initUI(self):
         self.setWindowIcon(QIcon(str(self.imgDir / settings.ICON)))
@@ -47,35 +52,42 @@ class DesktopPet(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)  # 背景透明
         point = self.desktop.availableGeometry().bottomRight()
-        self.setGeometry(point.x() - 800, point.y() - 1200, 600, 1000)
+        self.setGeometry(point.x() - 800 - 1600, point.y() - 1200, 600 + 1600, 1000)
 
-        self.button1 = QPushButton(self)
-        self.button1.setGeometry(0, 700, 64, 64)
-        self.button1.setIcon(QIcon(str(self.imgDir / "config.png")))
-        self.button1.setIconSize(QSize(64, 64))
-        self.button1.setStyleSheet("border-radius: 32;")
-        self.button1.clicked.connect(self.onClick1)
-        self.button1.hide()
-        self.button2 = QPushButton(self)
-        self.button2.setGeometry(0, 800, 64, 64)
-        self.button2.setIcon(QIcon(str(self.imgDir / "config.png")))
-        self.button2.setIconSize(QSize(64, 64))
-        self.button2.setStyleSheet("border-radius: 32;")
-        self.button2.clicked.connect(self.onClick2)
-        self.button2.hide()
-        self.button3 = QPushButton(self)
-        self.button3.setGeometry(0, 900, 64, 64)
-        self.button3.setIcon(QIcon(str(self.imgDir / "config.png")))
-        self.button3.setIconSize(QSize(64, 64))
-        self.button3.setStyleSheet("border-radius: 32;")
-        self.button3.clicked.connect(self.onClick3)
-        self.button3.hide()
+        self.chatBtn = QPushButton(self)
+        self.chatBtn.setGeometry(90 + 1600, 790, 72, 72)
+        self.chatBtn.setIcon(QIcon(str(self.imgDir / "chat.png")))
+        self.chatBtn.setIconSize(QSize(72, 72))
+        self.chatBtn.setStyleSheet("border-radius: 32;")
+        self.chatBtn.clicked.connect(self.onClickChat)
+        self.chatBtn.hide()
+        self.resetBtn = QPushButton(self)
+        self.resetBtn.setGeometry(90 + 16 + 1600, 870, 56, 56)
+        self.resetBtn.setIcon(QIcon(str(self.imgDir / "reset.png")))
+        self.resetBtn.setIconSize(QSize(56, 56))
+        self.resetBtn.setStyleSheet("border-radius: 32;")
+        self.resetBtn.clicked.connect(self.onClickReset)
+        self.resetBtn.hide()
+        self.palyBtn = QPushButton(self)
+        self.palyBtn.setGeometry(410 + 1600, 790, 72, 72)
+        self.palyBtn.setIcon(QIcon(str(self.imgDir / "play.png")))
+        self.palyBtn.setIconSize(QSize(72, 72))
+        self.palyBtn.setStyleSheet("border-radius: 32;")
+        self.palyBtn.clicked.connect(self.onClickPlay)
+        self.palyBtn.hide()
+        self.profileBtn = QPushButton(self)
+        self.profileBtn.setGeometry(410 + 1600, 870, 56, 56)
+        self.profileBtn.setIcon(QIcon(str(self.imgDir / "heart.png")))
+        self.profileBtn.setIconSize(QSize(56, 56))
+        self.profileBtn.setStyleSheet("border-radius: 32;")
+        self.profileBtn.clicked.connect(self.onClickProfile)
+        self.profileBtn.hide()
 
         self.contentWidget = QWidget(self)
-        self.contentWidget.setGeometry(0, 100, 600, 600)
+        self.contentWidget.setGeometry(0 + 1600, 100, 600, 600)
 
         self.textEdit = QTextEdit(self.contentWidget)
-        self.textEdit.setGeometry(0, 550, 480, 64)
+        self.textEdit.setGeometry(0 + 1600, 550, 480, 64)
         self.textEdit.setPlaceholderText("有什么问题尽管问我")
         self.textEdit.setStyleSheet(
             """
@@ -99,18 +111,18 @@ class DesktopPet(QMainWindow):
         self.textEdit.textChanged.connect(self.adjustInputHeight)
 
         self.sendButton = QPushButton(self.contentWidget)
-        self.sendButton.setIcon(QIcon(str(self.imgDir / "config.png")))
+        self.sendButton.setIcon(QIcon(str(self.imgDir / "send.png")))
         self.sendButton.setIconSize(QSize(64, 64))
-        self.sendButton.setGeometry(480 - 64, 550, 64, 64)
+        self.sendButton.setGeometry(480 - 64 + 1600, 550, 64, 64)
         self.sendButton.setStyleSheet(
             "border-radius: 32; background-color: rgb(70,70,70)"
         )
         self.sendButton.clicked.connect(self.sendMessage)
 
         self.resetButton = QPushButton(self.contentWidget)
-        self.resetButton.setIcon(QIcon(str(self.imgDir / "config.png")))
+        self.resetButton.setIcon(QIcon(str(self.imgDir / "regenerate.png")))
         self.resetButton.setIconSize(QSize(64, 64))
-        self.resetButton.setGeometry(480 + 16, 550, 64, 64)
+        self.resetButton.setGeometry(480 + 16 + 1600, 550, 64, 64)
         self.resetButton.setStyleSheet(
             "border-radius: 32; background-color: rgb(70,70,70)"
         )
@@ -118,7 +130,7 @@ class DesktopPet(QMainWindow):
 
         self.replyLoading = QWidget(self.contentWidget)
         self.replyLoadingText = QLabel(self.replyLoading)
-        self.replyLoadingText.setGeometry(0, 550 - 64 - 16, 560, 64)
+        self.replyLoadingText.setGeometry(0 + 1600, 550 - 64 - 16, 560, 64)
         self.replyLoadingText.setStyleSheet(
             """
                 QLabel { 
@@ -134,7 +146,7 @@ class DesktopPet(QMainWindow):
         self.replyLoadingText.setText("小龙正在努力思考...")
         self.replyLoadingIcon = QLabel(self.replyLoading)
         self.extraInputHeight = 0
-        self.replyLoadingIcon.setGeometry(0, 550 - 64 - 16, 64, 64)
+        self.replyLoadingIcon.setGeometry(0 + 1600, 550 - 64 - 16, 64, 64)
         self.replyLoadingIcon.setScaledContents(True)
         loadingPixmap = QPixmap(str(self.imgDir / "config.png"))
         self.replyLoadingIcon.setPixmap(loadingPixmap)
@@ -143,12 +155,12 @@ class DesktopPet(QMainWindow):
         self.replyView = QTextEdit(self.contentWidget)
         self.replyViewHeight = 64
         self.replyView.setGeometry(
-            0, 550 - 16 - self.replyViewHeight, 560, self.replyViewHeight
+            0 + 1600, 550 - 16 - self.replyViewHeight, 560, self.replyViewHeight
         )
         self.replyView.setStyleSheet(
             """
                 QTextEdit { 
-                    background-color: rgba(0,0,0, 0.6);
+                    background-color: rgba(0,0,0,0.6);
                     border-radius: 32;
                     color : white;
                     font-family: "Microsoft YaHei";
@@ -165,16 +177,16 @@ class DesktopPet(QMainWindow):
         self.replyView.textChanged.connect(self.adjustOutputHeight)
         self.replyView.hide()
 
-        self.pet = PetWidget(self)
-        self.pet.setGeometry(100, 600, 400, 400)
-        self.pet.setPix(str(self.imgDir / settings.INIT_PICTURE))
+        self.pet = PetWidget(self, self.level)
+        self.pet.setGeometry(100 + 1600, 600, 400, 400)
+        self.pet.welcome()
 
         self.setCentralWidget(self.contentWidget)
 
         if self.tray:
             self.trayMenu()  # 系统托盘
         # 全局快捷键
-        keyboard.add_hotkey("ctrl+alt+w", self.switchOverlayActive)
+        keyboard.add_hotkey("alt+w", self.switchOverlayActive)
 
     def adjustInputHeight(self):
         # 根据文本内容调整QTextEdit的高度
@@ -185,9 +197,9 @@ class DesktopPet(QMainWindow):
             self.textEdit.setFixedHeight(newHeight)
             self.extraInputHeight = newHeight - 64
             # print("adjustInputHeight", documentSize.height())
-            self.textEdit.setGeometry(0, 550 - self.extraInputHeight, 480, 64)
+            self.textEdit.setGeometry(0 + 1600, 550 - self.extraInputHeight, 480, 64)
             self.replyView.setGeometry(
-                0,
+                0 + 1600,
                 550 - 16 - self.replyViewHeight - self.extraInputHeight,
                 560,
                 self.replyViewHeight,
@@ -203,7 +215,6 @@ class DesktopPet(QMainWindow):
         self.textEdit.setText("")
         self.replyView.hide()
         self.replyLoading.show()
-        # QTimer.singleShot(2000, self.receiveMessage)
 
     def reReply(self):
         # TODO
@@ -223,28 +234,39 @@ class DesktopPet(QMainWindow):
         self.replyViewHeight = int(docSize.height() + 20)
         self.replyView.setFixedHeight(self.replyViewHeight)
         self.replyView.setGeometry(
-            0,
+            0 + 1600,
             550 - 16 - self.replyViewHeight,
             560,
             self.replyViewHeight,
         )
 
     def initChat(self):
+        self.lastSentMsg = ""
         self.userName = "123"
-        self.userId = 1  # TODO
+        self.userId = "ailong1"
         self.agentId = "ailong"  # TODO
-        self.chatClient = WebSocketClient("wss://data.test.meituan.com/channel/chat/1")
+        self.chatClient = WebSocketClient(
+            f"wss://data.test.meituan.com/channel/chat/{self.userId}"
+        )
         self.chatClient.received.connect(self.onRecvMessage)
         self.chatClient.lost_connection.connect(self.lostConnection)
         print("init chat success, userId: ", self.userId)
 
     def sendChatMessage(self, text):
-        message = f"{{'userId': {self.userId}, 'agentId': '{self.agentId}', 'type': 'text', 'content': '{text}', 'userName': '{self.userName}'}}"
-        print('SendMessage', message)
+        message = f"{{'userId': '{self.userId}', 'agentId': '{self.agentId}', 'type': 'text', 'content': '{text}', 'userName': '{self.userName}'}}"
+        print("SendMessage", message)
         self.chatClient.sendMessage(message)
 
-    def onRecvMessage(self, status, message, data, traceId):
+    def remove_brackets(self, text):
+        result = re.sub(r'（.*?）', '', text)
+        return result
+    def onRecvMessage(self, status, message, data, needTransform, traceId):
         self.receiveMessage(data)
+        textToTTS = self.remove_brackets(data)
+        print('textToTTS', textToTTS)
+        # TODO TTS
+        if needTransform == "true":
+            self.pet.upgrade()
 
     def lostConnection(self):
         self.replyLoading.hide()
@@ -253,106 +275,153 @@ class DesktopPet(QMainWindow):
     def trayMenu(self):
         tray = QSystemTrayIcon(self)
         tray.setIcon(QIcon(str(self.imgDir / settings.TRAY_ICON)))
+        menu = QMenu()
+        close = menu.addAction("退出")
+        close.triggered.connect(self.close)
+        close.setIcon(QIcon(str(self.imgDir / settings.EXIT)))
+        tray.setContextMenu(menu)
         tray.show()
 
     def switchOverlayActive(self):
+        if not self.showOverlay:
+            print("")
+        else:
+            print("")
         self.showOverlay = not self.showOverlay
         print("switchOverlayActive", self.showOverlay)
 
     def mousePressEvent(self, event):
-        # if self.playing:
-        #     return
         if event.button() == Qt.LeftButton:
-            self.pet.walking = False  # 单击 关闭跑步
             self.pet.draging = True
+            self.pet.moveAction()
             self.mDragPosition = event.globalPos() - self.pos()
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        # 双击鼠标 启动walk, 所以释放的时候要判断是否是双击的情况
-        if self.pet.walking is False:
-            self.pet.setPix(str(self.imgDir / settings.INIT_PICTURE))
-            self.pet.draging = False
+        self.pet.draging = False
+        self.pet.defaultAction()
 
     def mouseMoveEvent(self, event):
-        # if self.playing or self.walking:
-        #     return
         if event.buttons() == Qt.LeftButton:
+            if self.mDragPosition == None:
+                return
             self.move(event.globalPos() - self.mDragPosition)
-            moveDistance = (self.mDragPosition - event.pos()).x()
-            if -1 <= moveDistance < 0:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_1))
-            elif -2 <= moveDistance < -1:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_2))
-            elif moveDistance < -2:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_3))
+            # moveDistance = (self.mDragPosition - event.pos()).x()
+            # if -1 <= moveDistance < 0:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_1))
+            # elif -2 <= moveDistance < -1:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_2))
+            # elif moveDistance < -2:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_3))
 
-            elif 0 < moveDistance <= 1:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_1))
-            elif 1 < moveDistance <= 2:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_2))
-            elif 2 < moveDistance:
-                self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_3))
+            # elif 0 < moveDistance <= 1:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_1))
+            # elif 1 < moveDistance <= 2:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_2))
+            # elif 2 < moveDistance:
+            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_3))
 
-    def mouseDoubleClickEvent(self, QMouseEvent):
-        if self.pet.playing:
-            return
-        # if Qt.LeftButton == QMouseEvent.button():
-        #     self.pet.walking = True
-        #     self.walk()
-
-    def closeEvent(self, QCloseEvent):
-        #  如何在walk 的时候关闭, 会导致程序坞的图标不消失,所以要先停掉walk
-        self.pet.walking = False
+    # def mouseDoubleClickEvent(self, QMouseEvent):
+    #     if self.pet.playing:
+    #         return
+    #     # if Qt.LeftButton == QMouseEvent.button():
+    #     #     self.pet.walking = True
+    #     #     self.walk()
 
     def contextMenuEvent(self, e):
-        # if self.walking or self.playing or self.draging:
-        #     return
-        self.button1.show()
-        self.button2.show()
-        self.button3.show()
-        self.pet.contenting = True
-        menu = QMenu(self)
-        ability = Ability(self)
+        self.chatBtn.show()
+        self.resetBtn.show()
+        self.palyBtn.show()
+        self.profileBtn.show()
+        self.chatBtn.raise_()
+        self.resetBtn.raise_()
+        self.palyBtn.raise_()
+        self.profileBtn.raise_()
 
-        wechat = menu.addAction("猿神，启动")
-        wechat.triggered.connect(ability.openBMW)
-        wechat.setIcon(QIcon(str(self.imgDir / settings.WECHAT)))
+        # self.pet.contenting = True
+        # menu = QMenu(self)
+        # ability = Ability(self)
 
-        close = menu.addAction("退出")
-        close.triggered.connect(self.close)
-        close.setIcon(QIcon(str(self.imgDir / settings.EXIT)))
+        # close = menu.addAction("退出")
+        # close.triggered.connect(self.close)
+        # close.setIcon(QIcon(str(self.imgDir / settings.EXIT)))
 
-        menu.exec_(e.globalPos())
+        # menu.exec_(e.globalPos())
         self.pet.contenting = False
 
     def focusOutEvent(self, event):
         print("focusOutEvent", event)
-        self.button1.hide()
-        self.button2.hide()
-        self.button3.hide()
+        self.chatBtn.hide()
+        self.resetBtn.hide()
+        self.palyBtn.hide()
+        self.profileBtn.hide()
 
     def welcomePage(self):
         """欢迎页面"""
 
-    def onClick1(self):
-        print("按钮1被点击")
+    def hideBtns(self):
+        self.chatBtn.hide()
+        self.resetBtn.hide()
+        self.palyBtn.hide()
+        self.profileBtn.hide()
 
-    def onClick2(self):
-        print("按钮2被点击")
+    def onClickChat(self):
+        print("onClickChat")
+        self.contentWidget.show()
 
-    def onClick3(self):
-        print("按钮3被点击")
+    def onClickReset(self):
+        print("onClickReset")
+        self.resetWidget = ResetWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.resetWidget.show()
+        self.resetWidget.confirm_reset.connect(self.resetChat)
+        self.hideBtns()
+        self.contentWidget.hide()
+
+    def resetChat(self):
+        url = "https://data.test.meituan.com/pc/v1/conversation/reset"
+        headers = {"Content-Type": "application/json"}
+        data = {"userId": self.userId, "agentId": self.agentId}
+        response = requests.post(url, json=data, headers=headers)
+        print(response)
+        self.level = 1
+        self.pet.level = 1
+        self.pet.defaultAction()
+
+    def onClickPlay(self):
+        print("onClickPlay")
+        self.contentWidget.hide()
+        self.gameWidget = SetupGameWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.gameWidget.lower()
+        self.gameWidget.show()
+        self.hideBtns()
+        self.contentWidget.hide()
+
+    def onClickProfile(self):
+        print("onClickProfile")
+        self.profileWidget = ProfileWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.profileWidget.lower()
+        self.profileWidget.show()
+        self.hideBtns()
+        self.contentWidget.hide()
 
 
 class PetWidget(QWidget):
-    def __init__(self, parent: QWidget | None) -> None:
+    def __init__(self, parent: QWidget | None, level) -> None:
         super().__init__(parent)
+        self.level = level
+        levelStr = f"level{self.level}"
         self.imgDir = settings.SETUP_DIR / "img"
-        self.playing = False
-        self.draging = False
-        self.walking = False
-        self.contenting = False
+        self.actionObj = Action()
+        self.allActions = self.actionObj.getAllAction(levelStr)
+        self.actionDict = self.actionObj.actions
+        self.timer = QTimer(self)
+        self.isMoving = False
 
     def paintEvent(self, QPaintEvent):
         painter = QPainter(self)
@@ -364,43 +433,60 @@ class PetWidget(QWidget):
             self.pix = pix
         else:
             self.pix = QPixmap(pix)
-        # self.resize(self.pix.size())
-        # self.setMask(self.pix.mask())
         self.update()
 
+    def welcome(self):
+        # 目前只有一阶段有启动动画
+        if self.level == 1:
+            self.doAction("start1")
+        else:
+            self.setPix(str(self.imgDir / settings.INIT_PICTURE))
+
+    def upgrade(self):
+        self.doAction(f"upgrade{self.level}")
+        self.level += 1
+
+    def defaultAction(self):
+        if self.level == 1:
+            self.doAction("default1")
+        else:
+            self.setPix(str(self.imgDir / settings.INIT_PICTURE))
+
+    def speakAction(self):
+        self.doAction(f"speak{self.level}")
+
+    def listenAction(self):
+        if self.level == 1:
+            self.doAction("listen1")
+
+    def touchHeadAction(self):
+        if self.level == 1:
+            self.doAction("head1")
+
+    def touchBodyAction(self):
+        if self.level == 1:
+            self.doAction("body1")
+
+    def moveAction(self):
+        if self.level == 1:
+            # if not self.isMoving:
+            self.doAction("move1")
+
     def startMovie(self):
-        self.allActions = Action().getAllAction()
+        self.timer.stop()
+        self.actionTimer = ActionThread(self)
+        self.allActions = Action().getAllAction(f"level{self.level}")
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.action)
+        self.timer.timeout.connect(self.doAction)
         self.timer.start(settings.MOVIE_TIME_INTERVAL * 1000)
 
-    def walk(self):
-        walk = settings.WALK
-        i = 0
-        while self.walking is True:
-            self.move(self.pos().x() - 5, self.pos().y())
-            if self.pos().x() < -128:
-                self.move(
-                    self.desktop.availableGeometry().bottomRight().x() - 50,
-                    self.pos().y(),
-                )
-            self.setPix(str(self.imgDir / walk[i]))
-            QApplication.processEvents()
-            time.sleep(0.5)
-            if i == 1:
-                i = 0
-            else:
-                i += 1
-
-    def action(self):
-        if self.draging or self.walking or self.contenting:
-            return
-        self.playing = True
-        currentMovie = random.choice(self.allActions)
-        # print("action", currentMovie)
+    def doAction(self, state):
+        self.state = state
+        i = self.actionDict[state]
+        movie = self.allActions[i]
         self.actionTimer = ActionThread(self)
         self.actionTimer.update_signal.connect(self.updateAction)
-        self.currentMovie = currentMovie
+        self.currentMovie = movie
         self.currentI = 0
         self.actionTimer.start()
 
@@ -410,8 +496,20 @@ class PetWidget(QWidget):
             self.currentI += 1
             self.actionTimer.start()
         else:
-            self.playing = False
-            self.setPix(str(self.imgDir / settings.INIT_PICTURE))
+            if self.state in ["start1", "upgrade1", "upgrade2", "body1", "head1"]:
+                # 启动、升级、触摸动画结束后切默认状态
+                self.defaultAction()
+            elif self.state in [
+                "default1",
+                "move1",
+                "listen1",
+                "speak1",
+                "speak2",
+                "speak3",
+            ]:
+                # 其他动画结束后循环播放
+                self.currentI = 0
+                self.actionTimer.start()
 
 
 class ActionThread(QThread):
@@ -421,30 +519,35 @@ class ActionThread(QThread):
         super().__init__(parent)
 
     def run(self):
-        time.sleep(0.5)
+        time.sleep(0.2)
         self.update_signal.emit("sig")
 
 
 class Action(object):
     def __init__(self):
-        self.imgDir = settings.SETUP_DIR / "img"
-        self.actionList = []
+        self.actions = {}
         self.picturesList = []
 
     def createPicture(self):
         module = action
+        cnt = 0
         for i in dir(module):
             if i.startswith("__"):
                 continue
             pictures = getattr(module, i)
+            self.actions[i] = cnt
+            cnt += 1
             self.picturesList.append(pictures)
+        print(self.actions)
 
     def createQpixmap(self):
         for indexI, i in enumerate(self.picturesList):
             for indexJ, j in enumerate(i):
                 self.picturesList[indexI][indexJ] = QPixmap(str(self.imgDir / j))
 
-    def getAllAction(self):
+    def getAllAction(self, level):
+        self.level = level
+        self.imgDir = settings.SETUP_DIR / "img"
         self.createPicture()
         self.createQpixmap()
         return self.picturesList

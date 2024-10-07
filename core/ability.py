@@ -9,8 +9,7 @@ from ctypes import windll
 from PyQt5.QtCore import QThread
 
 class Ability(object):
-    def __init__(self, pet):
-        self.pet = pet
+    def __init__(self):
         self.system = os.name
         self.cnt = 0
 
@@ -19,8 +18,8 @@ class Ability(object):
         gamePath = steamPath + '\\steamapps\\common\\BlackMythWukong\\b1\\Binaries\\Win64\\b1-Win64-Shipping.exe'
         subprocess.Popen([gamePath])
         schedule.every(5).seconds.do(self.getScreenShot)
-        self.pet.thread = Thread(app='screenShot')
-        self.pet.thread.start()
+        self.thread = Thread(app='screenShot')
+        self.thread.start()
         
     def getScreenShot(self):
         try:
@@ -67,7 +66,7 @@ class Thread(QThread):
 
     def run(self):
         if self.app == 'screenShot':
-            # time.sleep(15)
+            time.sleep(15)
             while True:
                 schedule.run_pending()
                 time.sleep(1)
