@@ -1,1 +1,1 @@
-pyinstaller --add-data "img;img" --hidden-import=core.settings -F run.py
+pyinstaller --add-data "img;img" --noconsole --icon="D:\\repos\\desktop-pet\\icon.ico" --hidden-import=core.settings -F run.py

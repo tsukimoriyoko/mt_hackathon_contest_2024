@@ -138,7 +138,7 @@ class DesktopPet(QMainWindow):
                     border-radius: 32; 
                     color : white;                  
                     font-family: "Microsoft YaHei";
-                    padding-left: 72; 
+                    padding-left: 60; 
                     font-size: 28px; 
                 }
             """
@@ -146,9 +146,9 @@ class DesktopPet(QMainWindow):
         self.replyLoadingText.setText("小龙正在努力思考...")
         self.replyLoadingIcon = QLabel(self.replyLoading)
         self.extraInputHeight = 0
-        self.replyLoadingIcon.setGeometry(0 + 1600, 550 - 64 - 16, 64, 64)
+        self.replyLoadingIcon.setGeometry(28 + 1600, 566 - 64 - 16, 24, 32)
         self.replyLoadingIcon.setScaledContents(True)
-        loadingPixmap = QPixmap(str(self.imgDir / "config.png"))
+        loadingPixmap = QPixmap(str(self.imgDir / "loading.png"))
         self.replyLoadingIcon.setPixmap(loadingPixmap)
         self.replyLoading.hide()
 
@@ -226,6 +226,7 @@ class DesktopPet(QMainWindow):
         self.replyView.setText(text)
         self.replyLoading.hide()
         self.replyView.show()
+        self.pet.speakAction()
 
     def adjustOutputHeight(self):
         self.replyView.update()
@@ -289,22 +290,33 @@ class DesktopPet(QMainWindow):
             print("")
         self.showOverlay = not self.showOverlay
         print("switchOverlayActive", self.showOverlay)
+        # TODO 语音输入
+        self.activateWindow()
+        self.textEdit.setFocus()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.pet.draging = True
-            self.pet.moveAction()
             self.mDragPosition = event.globalPos() - self.pos()
+            if self.mDragPosition.y() > 850:
+                self.pet.touchBodyAction()
+                print("touch body")
+            else:
+                self.pet.touchHeadAction()
+                print("touch head")
             event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self.pet.draging:
+            self.pet.defaultAction()
         self.pet.draging = False
-        self.pet.defaultAction()
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton:
             if self.mDragPosition == None:
                 return
+            if not self.pet.draging:
+                self.pet.draging = True
+                self.pet.moveAction()
             self.move(event.globalPos() - self.mDragPosition)
             # moveDistance = (self.mDragPosition - event.pos()).x()
             # if -1 <= moveDistance < 0:
@@ -388,6 +400,8 @@ class DesktopPet(QMainWindow):
         self.level = 1
         self.pet.level = 1
         self.pet.defaultAction()
+        self.textEdit.setText("")
+        self.replyView.setText("")
 
     def onClickPlay(self):
         print("onClickPlay")
@@ -422,6 +436,8 @@ class PetWidget(QWidget):
         self.actionDict = self.actionObj.actions
         self.timer = QTimer(self)
         self.isMoving = False
+        self.speakTimer = 0
+        self.draging = False
 
     def paintEvent(self, QPaintEvent):
         painter = QPainter(self)
@@ -450,7 +466,7 @@ class PetWidget(QWidget):
         if self.level == 1:
             self.doAction("default1")
         else:
-            self.setPix(str(self.imgDir / settings.INIT_PICTURE))
+            self.setPix(str(self.imgDir / f"level{self.level}" / "init.png"))
 
     def speakAction(self):
         self.doAction(f"speak{self.level}")
@@ -469,18 +485,10 @@ class PetWidget(QWidget):
 
     def moveAction(self):
         if self.level == 1:
-            # if not self.isMoving:
             self.doAction("move1")
 
-    def startMovie(self):
-        self.timer.stop()
-        self.actionTimer = ActionThread(self)
-        self.allActions = Action().getAllAction(f"level{self.level}")
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.doAction)
-        self.timer.start(settings.MOVIE_TIME_INTERVAL * 1000)
-
     def doAction(self, state):
+        print(state)
         self.state = state
         i = self.actionDict[state]
         movie = self.allActions[i]
@@ -503,11 +511,18 @@ class PetWidget(QWidget):
                 "default1",
                 "move1",
                 "listen1",
+            ]:
+                # 其他动画结束后循环播放
+                self.currentI = 0
+                self.actionTimer.start()
+            elif self.state in [
                 "speak1",
                 "speak2",
                 "speak3",
             ]:
-                # 其他动画结束后循环播放
+                if self.speakTimer > 1:
+                    return
+                self.speakTimer += 1
                 self.currentI = 0
                 self.actionTimer.start()
 
