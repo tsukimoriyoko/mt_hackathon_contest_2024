@@ -1,4 +1,3 @@
-import random
 import time
 
 from PyQt5.QtCore import (
@@ -15,7 +14,6 @@ from PyQt5.QtWidgets import (
     QMenu,
     QApplication,
     QSystemTrayIcon,
-    QAction,
     QMainWindow,
     QPushButton,
     QTextEdit,
@@ -26,7 +24,6 @@ import requests
 import re
 
 from core import action
-from core.ability import Ability
 from core.conf import settings
 from core.ws_client import WebSocketClient
 from core.sub_windows import SetupGameWidget, ProfileWidget, ResetWidget
@@ -45,6 +42,11 @@ class DesktopPet(QMainWindow):
         self.initChat()
         self.mDragPosition = None
         # self.tts = TTS()
+        if self.tray:
+            self.trayMenu()  # 系统托盘
+        # 全局快捷键
+        keyboard.add_hotkey("alt+w", self.switchOverlayActive)
+
 
     def initUI(self):
         self.setWindowIcon(QIcon(str(self.imgDir / settings.ICON)))
@@ -86,7 +88,7 @@ class DesktopPet(QMainWindow):
         self.contentWidget = QWidget(self)
         self.contentWidget.setGeometry(0 + 1600, 100, 600, 600)
 
-        self.textEdit = QTextEdit(self.contentWidget)
+        self.textEdit = CustomTextEdit(self)
         self.textEdit.setGeometry(0 + 1600, 550, 480, 64)
         self.textEdit.setPlaceholderText("有什么问题尽管问我")
         self.textEdit.setStyleSheet(
@@ -178,15 +180,10 @@ class DesktopPet(QMainWindow):
         self.replyView.hide()
 
         self.pet = PetWidget(self, self.level)
-        self.pet.setGeometry(100 + 1600, 600, 400, 400)
+        self.pet.setGeometry(80 + 1600, 600, 400, 400)
         self.pet.welcome()
 
         self.setCentralWidget(self.contentWidget)
-
-        if self.tray:
-            self.trayMenu()  # 系统托盘
-        # 全局快捷键
-        keyboard.add_hotkey("alt+w", self.switchOverlayActive)
 
     def adjustInputHeight(self):
         # 根据文本内容调整QTextEdit的高度
@@ -227,6 +224,7 @@ class DesktopPet(QMainWindow):
         self.replyLoading.hide()
         self.replyView.show()
         self.pet.speakAction()
+        self.textEdit.setFocus()
 
     def adjustOutputHeight(self):
         self.replyView.update()
@@ -293,7 +291,7 @@ class DesktopPet(QMainWindow):
         # TODO 语音输入
         self.activateWindow()
         self.textEdit.setFocus()
-
+    
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.mDragPosition = event.globalPos() - self.pos()
@@ -402,6 +400,7 @@ class DesktopPet(QMainWindow):
         self.pet.defaultAction()
         self.textEdit.setText("")
         self.replyView.setText("")
+        self.replyView.hide()
 
     def onClickPlay(self):
         print("onClickPlay")
@@ -566,3 +565,14 @@ class Action(object):
         self.createPicture()
         self.createQpixmap()
         return self.picturesList
+
+
+class CustomTextEdit(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return:
+            self.parent().sendMessage()
+        else:
+            super().keyPressEvent(event)

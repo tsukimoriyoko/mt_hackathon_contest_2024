@@ -79,7 +79,7 @@ class ResetWidget(QWidget):
         self.title = QLabel("重置对话", self)
         self.title.setGeometry(48, 32, 128, 38)
         self.title.setStyleSheet("color: #222222; font-family: 'Microsoft YaHei'; font-weight: bold; font-size: 32px; line-height: 38px;")
-        self.subTitle = QTextEdit("这是一段说明文案这是一段说明文案这是一段说明文案", self)
+        self.subTitle = QTextEdit("重置后你与小龙的聊天记忆会被清空，下次你们将重新认识", self)
         self.subTitle.setGeometry(48, 100, 460, 68 + 10)
         self.subTitle.setEnabled(False)
         self.subTitle.setStyleSheet(
