@@ -3,7 +3,7 @@ from PyQt5.QtCore import (
     QSize,
     pyqtSignal,
 )
-from PyQt5.QtGui import QPixmap, QIcon, QPainter
+from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtWidgets import (
     QWidget,
     QFrame,
@@ -65,7 +65,56 @@ class ProfileWidget(QWidget):
         self.closeBtn.setStyleSheet("background-color: transparent;")
         self.closeBtn.setIcon(QIcon(str(self.imgDir / "close_w.png")))
         self.closeBtn.clicked.connect(self.close)
+
+class SwitchChacaterWidget(QWidget):
+    selected = pyqtSignal(int)
+    def __init__(self, parent: QWidget | None = ..., flags: Qt.WindowFlags | Qt.WindowType = ...) -> None:
+        super().__init__(parent, flags)
+        self.imgDir = settings.SETUP_DIR / "img"
+        self.setGeometry(580, 420, 1256, 510)
+        self.bg = QFrame(self)
+        self.bg.setGeometry(0, 0, 1256, 510)
+        self.bg.setStyleSheet("background-color: white; border-radius: 16px")
+        self.title = QLabel(self)
+        self.title.setGeometry(40, 36, 300, 60)
+        self.title.setText("切换角色")
+        self.title.setStyleSheet("font-size: 48px; font-weight: bold; font-family: 'Microsoft YaHei';")
+        self.closeBtn = QPushButton(self)
+        self.closeBtn.setGeometry(1170, 36, 26, 26)
+        self.closeBtn.setStyleSheet("background-color: transparent;")
+        self.closeBtn.setIcon(QIcon(str(self.imgDir / "close_b.png")))
+        self.closeBtn.clicked.connect(self.close)
         
+        images = [self.imgDir / "1.png", self.imgDir / "2.png", self.imgDir / "3.png"]
+        self.image1 = QPushButton(self)
+        self.image1.setGeometry(50, 130, 350, 350)
+        self.image1.setIcon(QIcon(str(images[0])))
+        self.image1.setIconSize(QSize(350, 350))
+        self.image1.setStyleSheet("background-color: transparent;")
+        self.image1.clicked.connect(self.select1)
+        self.image2 = QPushButton(self)
+        self.image2.setGeometry(450, 130, 350, 350)
+        self.image2.setIcon(QIcon(str(images[1])))
+        self.image2.setIconSize(QSize(350, 350))
+        self.image2.setStyleSheet("background-color: transparent;")
+        self.image2.clicked.connect(self.select2)
+        self.image3 = QPushButton(self)
+        self.image3.setGeometry(850, 130, 350, 350)
+        self.image3.setIcon(QIcon(str(images[2])))
+        self.image3.setIconSize(QSize(350, 350))
+        self.image3.setStyleSheet("background-color: transparent;")
+        self.image3.clicked.connect(self.select3)
+        
+    def select1(self):
+        self.selected.emit(1)
+        self.close()
+    def select2(self):
+        self.selected.emit(2)
+        self.close()
+    def select3(self):
+        self.selected.emit(3)
+        self.close()
+
 
 class ResetWidget(QWidget):
     confirm_reset = pyqtSignal()

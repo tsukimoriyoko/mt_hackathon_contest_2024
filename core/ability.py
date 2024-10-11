@@ -7,6 +7,7 @@ import win32gui
 import win32gui, win32ui
 from ctypes import windll
 from PyQt5.QtCore import QThread
+from core.upload_img import uploadImage
 
 class Ability(object):
     def __init__(self):
@@ -43,6 +44,9 @@ class Ability(object):
             saveDC.DeleteDC()
             mfcDC.DeleteDC()
             win32gui.ReleaseDC(hwnd, hwndDC)
+
+            time.sleep(1)
+            uploadImage("D:\\repos\\desktop-pet\\output\\screenshot_%d.jpg" % self.cnt)
 
             print(self.cnt)
             self.cnt += 1

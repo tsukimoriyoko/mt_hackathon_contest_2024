@@ -26,7 +26,7 @@ import re
 from core import action
 from core.conf import settings
 from core.ws_client import WebSocketClient
-from core.sub_windows import SetupGameWidget, ProfileWidget, ResetWidget
+from core.sub_windows import SetupGameWidget, ProfileWidget, ResetWidget, SwitchChacaterWidget
 from core.tts import TTS
 
 
@@ -56,6 +56,13 @@ class DesktopPet(QMainWindow):
         point = self.desktop.availableGeometry().bottomRight()
         self.setGeometry(point.x() - 800 - 1600, point.y() - 1200, 600 + 1600, 1000)
 
+        self.switchBtn = QPushButton(self)
+        self.switchBtn.setGeometry(90 + 16 + 1600, 720, 56, 56)
+        self.switchBtn.setIcon(QIcon(str(self.imgDir / "regenerate.png")))
+        self.switchBtn.setIconSize(QSize(50, 50))
+        self.switchBtn.setStyleSheet("border-radius: 32;")
+        self.switchBtn.clicked.connect(self.onClickSwitch)
+        self.switchBtn.hide()
         self.chatBtn = QPushButton(self)
         self.chatBtn.setGeometry(90 + 1600, 790, 72, 72)
         self.chatBtn.setIcon(QIcon(str(self.imgDir / "chat.png")))
@@ -88,7 +95,7 @@ class DesktopPet(QMainWindow):
         self.contentWidget = QWidget(self)
         self.contentWidget.setGeometry(0 + 1600, 100, 600, 600)
 
-        self.textEdit = CustomTextEdit(self)
+        self.textEdit = CustomTextEdit(self.contentWidget)
         self.textEdit.setGeometry(0 + 1600, 550, 480, 64)
         self.textEdit.setPlaceholderText("有什么问题尽管问我")
         self.textEdit.setStyleSheet(
@@ -316,64 +323,55 @@ class DesktopPet(QMainWindow):
                 self.pet.draging = True
                 self.pet.moveAction()
             self.move(event.globalPos() - self.mDragPosition)
-            # moveDistance = (self.mDragPosition - event.pos()).x()
-            # if -1 <= moveDistance < 0:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_1))
-            # elif -2 <= moveDistance < -1:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_2))
-            # elif moveDistance < -2:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_RIGHT_3))
-
-            # elif 0 < moveDistance <= 1:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_1))
-            # elif 1 < moveDistance <= 2:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_2))
-            # elif 2 < moveDistance:
-            #     self.pet.setPix(str(self.imgDir / settings.MOUSE_TO_LEFT_3))
-
-    # def mouseDoubleClickEvent(self, QMouseEvent):
-    #     if self.pet.playing:
-    #         return
-    #     # if Qt.LeftButton == QMouseEvent.button():
-    #     #     self.pet.walking = True
-    #     #     self.walk()
 
     def contextMenuEvent(self, e):
+        self.switchBtn.show()
         self.chatBtn.show()
         self.resetBtn.show()
         self.palyBtn.show()
         self.profileBtn.show()
+        self.switchBtn.raise_()
         self.chatBtn.raise_()
         self.resetBtn.raise_()
         self.palyBtn.raise_()
         self.profileBtn.raise_()
-
-        # self.pet.contenting = True
-        # menu = QMenu(self)
-        # ability = Ability(self)
-
-        # close = menu.addAction("退出")
-        # close.triggered.connect(self.close)
-        # close.setIcon(QIcon(str(self.imgDir / settings.EXIT)))
-
-        # menu.exec_(e.globalPos())
         self.pet.contenting = False
 
     def focusOutEvent(self, event):
         print("focusOutEvent", event)
-        self.chatBtn.hide()
-        self.resetBtn.hide()
-        self.palyBtn.hide()
-        self.profileBtn.hide()
+        self.hideBtns()
 
     def welcomePage(self):
         """欢迎页面"""
 
     def hideBtns(self):
+        self.switchBtn.hide()
         self.chatBtn.hide()
         self.resetBtn.hide()
         self.palyBtn.hide()
         self.profileBtn.hide()
+
+    def onClickSwitch(self):
+        print("onClickChat")
+        self.switchWidget = SwitchChacaterWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.switchWidget.lower()
+        self.switchWidget.show()
+        self.switchWidget.selected.connect(self.switchCharacter)
+        self.hideBtns()
+        self.contentWidget.hide()
+    def switchCharacter(self, id):
+        print(id)
+        self.level = id
+        self.pet.level = id
+        if id == 1:
+            self.agentId = 'yunwuchulong'
+        elif id == 2:
+            self.agentId = 'bingshuangyoulong'
+        elif id == 3:
+            self.agentId = 'fengbaoqinglong'
+        self.pet.defaultAction()
 
     def onClickChat(self):
         print("onClickChat")
@@ -462,6 +460,7 @@ class PetWidget(QWidget):
         self.level += 1
 
     def defaultAction(self):
+        self.currentMovie = None
         if self.level == 1:
             self.doAction("default1")
         else:
@@ -498,6 +497,8 @@ class PetWidget(QWidget):
         self.actionTimer.start()
 
     def updateAction(self):
+        if self.currentMovie == None:
+            return
         if self.currentI < len(self.currentMovie):
             self.setPix(self.currentMovie[self.currentI])
             self.currentI += 1
@@ -573,6 +574,6 @@ class CustomTextEdit(QTextEdit):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Return:
-            self.parent().sendMessage()
+            self.parent().parent().sendMessage()
         else:
             super().keyPressEvent(event)
