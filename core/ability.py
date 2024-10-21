@@ -8,6 +8,7 @@ import win32gui, win32ui
 from ctypes import windll
 from PyQt5.QtCore import QThread
 from core.upload_img import uploadImage
+from core.conf import settings
 
 class Ability(object):
     def __init__(self):
@@ -38,7 +39,8 @@ class Ability(object):
             saveDC.SelectObject(saveBitMap)
             
             result = windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 3)
-            saveBitMap.SaveBitmapFile(saveDC, "D:\\repos\\desktop-pet\\output\\screenshot_%d.jpg" % self.cnt)
+            filename = f"{settings.SETUP_DIR}\\output\\screenshot_{self.cnt}.jpg"
+            saveBitMap.SaveBitmapFile(saveDC, filename)
 
             win32gui.DeleteObject(saveBitMap.GetHandle())
             saveDC.DeleteDC()
@@ -46,7 +48,7 @@ class Ability(object):
             win32gui.ReleaseDC(hwnd, hwndDC)
 
             time.sleep(1)
-            uploadImage("D:\\repos\\desktop-pet\\output\\screenshot_%d.jpg" % self.cnt)
+            uploadImage(filename)
 
             print(self.cnt)
             self.cnt += 1

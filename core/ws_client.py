@@ -6,9 +6,10 @@ import threading
 import time
 import schedule
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
+import json
 
 class WebSocketClient(QObject):
-    received = pyqtSignal(int, str, str, str, str)
+    received = pyqtSignal(int, str, str, int, bool, str)
     lost_connection = pyqtSignal()
     def __init__(self, url):
         super().__init__()
@@ -39,19 +40,18 @@ class WebSocketClient(QObject):
             try:
                 result = self.ws.recv()
                 print(result)
-                pattern = r"WebResponse\(status=(\d+), message=(.*), data=AiLongChatResponse\(reply=(.*), stage=(.*), needTransform=(.*)\), traceId=(.*)\)"
-                match = re.match(pattern, result)
-                if match:
-                    status = match.group(1)
-                    message = match.group(2)
-                    data = match.group(3)
-                    stage = match.group(4)
-                    needTransform = match.group(5)
-                    traceId = match.group(6)
-                    print(
-                        f"Received: status={status}, message={message}, reply={data}, stage={stage}, needTransform={needTransform}, traceId={traceId}"
-                    )
-                    self.received.emit(status, message, data, needTransform, traceId)
+                try:
+                    data = json.loads(result)
+                    dat = data["data"]
+                    status = data["status"]
+                    message = data["message"]
+                    reply = dat["reply"]
+                    stage = dat["stage"]
+                    needTransform = dat["needTransform"]
+                    action = dat["action"]
+                    self.received.emit(status, message, reply, int(stage), needTransform, action)
+                except ValueError as e:
+                    return
             except WebSocketConnectionClosedException:
                 print("WebSocket connection closed. Reconnecting...")
                 self.connect()
@@ -62,7 +62,7 @@ class WebSocketClient(QObject):
     
     def sendHeartBeat(self):
         print('send heartbeat')
-        message = f"{{'userId': 'ailong1', 'agentId': 'ailong', 'type': 'heartbeat', 'content': '1', 'userName': '123'}}"
+        message = f"{{'userId': 'zhangjun102_4', 'agentId': 'ailong', 'type': 'heartbeat', 'content': '1', 'userName': '123'}}"
         self.ws.send(message)
 
     def close(self):

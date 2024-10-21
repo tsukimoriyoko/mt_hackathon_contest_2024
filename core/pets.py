@@ -28,6 +28,9 @@ from core.conf import settings
 from core.ws_client import WebSocketClient
 from core.sub_windows import SetupGameWidget, ProfileWidget, ResetWidget, SwitchChacaterWidget
 from core.tts import TTS
+from core.asr import ASR
+import core.asr_test
+import json
 
 
 class DesktopPet(QMainWindow):
@@ -37,15 +40,20 @@ class DesktopPet(QMainWindow):
         # self.tray = tray
         self.tray = True
         self.showOverlay = False
-        self.level = 1
+        self.level = 1 # 当前角色
+        self.maxLevel = 1 # 可选角色范围
         self.initUI()
         self.initChat()
+        self.getInfo()
         self.mDragPosition = None
-        # self.tts = TTS()
+        self.tts = TTS()
+        self.tts.play_finish.connect(self.pet.defaultAction)
+        self.asr = ASR()
+        self.asr.transcribed.connect(self.onRecordRes)
         if self.tray:
             self.trayMenu()  # 系统托盘
         # 全局快捷键
-        keyboard.add_hotkey("alt+w", self.switchOverlayActive)
+        keyboard.add_hotkey("alt+S", self.switchOverlayActive)
 
 
     def initUI(self):
@@ -56,13 +64,6 @@ class DesktopPet(QMainWindow):
         point = self.desktop.availableGeometry().bottomRight()
         self.setGeometry(point.x() - 800 - 1600, point.y() - 1200, 600 + 1600, 1000)
 
-        self.switchBtn = QPushButton(self)
-        self.switchBtn.setGeometry(90 + 16 + 1600, 720, 56, 56)
-        self.switchBtn.setIcon(QIcon(str(self.imgDir / "regenerate.png")))
-        self.switchBtn.setIconSize(QSize(50, 50))
-        self.switchBtn.setStyleSheet("border-radius: 32;")
-        self.switchBtn.clicked.connect(self.onClickSwitch)
-        self.switchBtn.hide()
         self.chatBtn = QPushButton(self)
         self.chatBtn.setGeometry(90 + 1600, 790, 72, 72)
         self.chatBtn.setIcon(QIcon(str(self.imgDir / "chat.png")))
@@ -101,7 +102,7 @@ class DesktopPet(QMainWindow):
         self.textEdit.setStyleSheet(
             """
                 QTextEdit {
-                    background-color: rgb(70,70,70);
+                    background-color: rgba(0,0,0,0.7);
                     color: #FFF;
                     font-family: "Microsoft YaHei";
                     font-size: 28px;
@@ -124,18 +125,18 @@ class DesktopPet(QMainWindow):
         self.sendButton.setIconSize(QSize(64, 64))
         self.sendButton.setGeometry(480 - 64 + 1600, 550, 64, 64)
         self.sendButton.setStyleSheet(
-            "border-radius: 32; background-color: rgb(70,70,70)"
+            "border-radius: 32; background-color: rgba(0,0,0,0.7)"
         )
         self.sendButton.clicked.connect(self.sendMessage)
 
-        self.resetButton = QPushButton(self.contentWidget)
-        self.resetButton.setIcon(QIcon(str(self.imgDir / "regenerate.png")))
-        self.resetButton.setIconSize(QSize(64, 64))
-        self.resetButton.setGeometry(480 + 16 + 1600, 550, 64, 64)
-        self.resetButton.setStyleSheet(
-            "border-radius: 32; background-color: rgb(70,70,70)"
+        self.ttsButton = QPushButton(self.contentWidget)
+        self.ttsButton.setIcon(QIcon(str(self.imgDir / "tts_on.png")))
+        self.ttsButton.setIconSize(QSize(64, 64))
+        self.ttsButton.setGeometry(480 + 16 + 1600, 550, 64, 64)
+        self.ttsButton.setStyleSheet(
+            "border-radius: 32;"
         )
-        self.resetButton.clicked.connect(self.reReply)
+        self.ttsButton.clicked.connect(self.switchTTS)
 
         self.replyLoading = QWidget(self.contentWidget)
         self.replyLoadingText = QLabel(self.replyLoading)
@@ -143,9 +144,9 @@ class DesktopPet(QMainWindow):
         self.replyLoadingText.setStyleSheet(
             """
                 QLabel { 
-                    background-color: rgb(70,70,70); 
+                    background-color: rgba(0,0,0,0.7); 
                     border-radius: 32; 
-                    color : white;                  
+                    color: white;                  
                     font-family: "Microsoft YaHei";
                     padding-left: 60; 
                     font-size: 28px; 
@@ -155,11 +156,34 @@ class DesktopPet(QMainWindow):
         self.replyLoadingText.setText("小龙正在努力思考...")
         self.replyLoadingIcon = QLabel(self.replyLoading)
         self.extraInputHeight = 0
-        self.replyLoadingIcon.setGeometry(28 + 1600, 566 - 64 - 16, 24, 32)
+        self.replyLoadingIcon.setGeometry(28 + 1600, 566 - 64 - 20, 24, 32)
         self.replyLoadingIcon.setScaledContents(True)
         loadingPixmap = QPixmap(str(self.imgDir / "loading.png"))
         self.replyLoadingIcon.setPixmap(loadingPixmap)
         self.replyLoading.hide()
+
+        self.asrWaiting = QWidget(self.contentWidget)
+        self.asrWaitingText = QLabel(self.asrWaiting)
+        self.asrWaitingText.setGeometry(0 + 1600, 550 - 64 - 16, 560, 64)
+        self.asrWaitingText.setStyleSheet(
+            """
+                QLabel { 
+                    background-color: rgba(0,0,0,0.7); 
+                    border-radius: 32; 
+                    color: white;                  
+                    font-family: "Microsoft YaHei";
+                    padding-left: 60; 
+                    font-size: 28px; 
+                }
+            """
+        )
+        self.asrWaitingText.setText("在听呢 ~ 松开按键停止输入 ~ ")
+        self.asrWaitingIcon = QLabel(self.asrWaiting)
+        self.asrWaitingIcon.setGeometry(28 + 1600, 566 - 64 - 16, 24, 28)
+        self.asrWaitingIcon.setScaledContents(True)
+        waitingPixmap = QPixmap(str(self.imgDir / "wav.png"))
+        self.asrWaitingIcon.setPixmap(waitingPixmap)
+        self.asrWaiting.hide()
 
         self.replyView = QTextEdit(self.contentWidget)
         self.replyViewHeight = 64
@@ -171,7 +195,7 @@ class DesktopPet(QMainWindow):
                 QTextEdit { 
                     background-color: rgba(0,0,0,0.6);
                     border-radius: 32;
-                    color : white;
+                    color: white;
                     font-family: "Microsoft YaHei";
                     padding-top: 8;
                     padding-left: 24;
@@ -186,7 +210,22 @@ class DesktopPet(QMainWindow):
         self.replyView.textChanged.connect(self.adjustOutputHeight)
         self.replyView.hide()
 
-        self.pet = PetWidget(self, self.level)
+        self.resetSuccessView = QLabel(self)
+        self.resetSuccessView.setGeometry(150 + 1600, 550, 264, 112)
+        self.resetSuccessView.setScaledContents(True)
+        resetSuccessPixmap = QPixmap(str(self.imgDir / "reset_success.png"))
+        self.resetSuccessView.setPixmap(resetSuccessPixmap)
+        self.resetSuccessView.hide()
+
+        self.upgradeView = QPushButton(self)
+        self.upgradeView.setGeometry(-30 + 1600, 500, 608, 158)
+        self.upgradeView.setIcon(QIcon(str(self.imgDir / "upgrade_2")))
+        self.upgradeView.setIconSize(QSize(608, 158))
+        self.upgradeView.setStyleSheet("background-color: transparent")
+        self.upgradeView.clicked.connect(self.onClickProfile)
+        self.upgradeView.hide()
+
+        self.pet = PetWidget(self, self.level, self.maxLevel)
         self.pet.setGeometry(80 + 1600, 600, 400, 400)
         self.pet.welcome()
 
@@ -230,7 +269,6 @@ class DesktopPet(QMainWindow):
         self.replyView.setText(text)
         self.replyLoading.hide()
         self.replyView.show()
-        self.pet.speakAction()
         self.textEdit.setFocus()
 
     def adjustOutputHeight(self):
@@ -250,7 +288,7 @@ class DesktopPet(QMainWindow):
         self.lastSentMsg = ""
         self.userName = "123"
         self.userId = "ailong1"
-        self.agentId = "ailong"  # TODO
+        self.agentId = "yunwuchulong"
         self.chatClient = WebSocketClient(
             f"wss://data.test.meituan.com/channel/chat/{self.userId}"
         )
@@ -266,17 +304,50 @@ class DesktopPet(QMainWindow):
     def remove_brackets(self, text):
         result = re.sub(r'（.*?）', '', text)
         return result
-    def onRecvMessage(self, status, message, data, needTransform, traceId):
+    
+    def onRecvMessage(self, status, message, data, stage, needTransform, action):
         self.receiveMessage(data)
         textToTTS = self.remove_brackets(data)
         print('textToTTS', textToTTS)
-        # TODO TTS
-        if needTransform == "true":
-            self.pet.upgrade()
+        self.tts.ttsStart(textToTTS)
+        if len(action) > 0:
+            print("chat action", action)
+            self.pet.spAction(action)
+        else:
+            self.pet.speakAction()
+        if needTransform:
+            self.maxLevel = stage
+            self.intimacy = 0
+            self.upgradeView.setIcon(QIcon(str(self.imgDir / f"upgrade_{stage}")))
+            self.upgradeView.show()
+            self.profileWidget.upgrade(stage)
+        else:
+            self.intimacy += 1
 
     def lostConnection(self):
         self.replyLoading.hide()
         self.textEdit.setText(self.lastSentMsg)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Alt:
+            self.replyLoading.hide()
+            self.replyView.hide()
+            self.asrWaiting.show()
+            self.recordThread = RecordThread(self)
+            self.recordThread.start()
+            self.pet.listenAction()
+            # print("Alt 键被按下")
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Alt:
+            self.asrWaiting.hide()
+            self.transcribeThread = TranscribeThread(self)
+            self.transcribeThread.complete.connect(self.onRecordRes)
+            self.transcribeThread.start()
+            self.pet.defaultAction()
+            # print("Alt 键被松开")
+    def onRecordRes(self, res):
+        print("onRecordRes", res)
+        self.textEdit.setText(res)
 
     def trayMenu(self):
         tray = QSystemTrayIcon(self)
@@ -295,9 +366,7 @@ class DesktopPet(QMainWindow):
             print("")
         self.showOverlay = not self.showOverlay
         print("switchOverlayActive", self.showOverlay)
-        # TODO 语音输入
         self.activateWindow()
-        self.textEdit.setFocus()
     
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -325,12 +394,10 @@ class DesktopPet(QMainWindow):
             self.move(event.globalPos() - self.mDragPosition)
 
     def contextMenuEvent(self, e):
-        self.switchBtn.show()
         self.chatBtn.show()
         self.resetBtn.show()
         self.palyBtn.show()
         self.profileBtn.show()
-        self.switchBtn.raise_()
         self.chatBtn.raise_()
         self.resetBtn.raise_()
         self.palyBtn.raise_()
@@ -344,8 +411,41 @@ class DesktopPet(QMainWindow):
     def welcomePage(self):
         """欢迎页面"""
 
+    def getInfo(self):
+        url = "https://data.test.meituan.com/pc/v1/agent/info"
+        headers = { "Content-Type": "application/json" }
+        params = { "userId": self.userId, "agentId": self.agentId }
+        response = requests.get(url=url, params=params, headers=headers)
+        try:
+            jsonData = json.loads(response.text)
+            print("agentInfo", jsonData["data"])
+            self.intimacy = jsonData["data"]["intimacy"]
+            self.level = 1
+            self.maxLevel = int(jsonData["data"]["stage"])
+            self.profileWidget = ProfileWidget(
+                parent=self,
+                flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint,
+                curLevel=self.level,
+                maxLevel=self.maxLevel,
+                intimacy=self.intimacy
+            )
+            self.profileWidget.change_signal.connect(self.switchCharacter)
+            self.profileWidget.hide()
+        except ValueError as e:
+            return
+        
+        self.resetWidget = ResetWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.resetWidget.hide()
+        self.resetWidget.confirm_reset.connect(self.resetChat)
+        self.gameWidget = SetupGameWidget(
+            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
+        self.gameWidget.hide()
+
+
     def hideBtns(self):
-        self.switchBtn.hide()
         self.chatBtn.hide()
         self.resetBtn.hide()
         self.palyBtn.hide()
@@ -361,17 +461,24 @@ class DesktopPet(QMainWindow):
         self.switchWidget.selected.connect(self.switchCharacter)
         self.hideBtns()
         self.contentWidget.hide()
-    def switchCharacter(self, id):
-        print(id)
-        self.level = id
-        self.pet.level = id
-        if id == 1:
+
+    def switchCharacter(self, newLevel):
+        if newLevel == 1:
             self.agentId = 'yunwuchulong'
-        elif id == 2:
+        elif newLevel == 2:
             self.agentId = 'bingshuangyoulong'
-        elif id == 3:
+        elif newLevel == 3:
             self.agentId = 'fengbaoqinglong'
-        self.pet.defaultAction()
+        lastLevel = self.level
+        self.level = newLevel
+        self.pet.level = newLevel
+        print("switchCharacter", lastLevel, newLevel)
+        if lastLevel == 1 and newLevel == 2:
+            self.pet.upgrade(newLevel)
+        elif lastLevel == 2 and newLevel == 3:
+            self.pet.upgrade(newLevel)
+        else:
+            self.pet.defaultAction()
 
     def onClickChat(self):
         print("onClickChat")
@@ -379,33 +486,33 @@ class DesktopPet(QMainWindow):
 
     def onClickReset(self):
         print("onClickReset")
-        self.resetWidget = ResetWidget(
-            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-        )
         self.resetWidget.show()
-        self.resetWidget.confirm_reset.connect(self.resetChat)
         self.hideBtns()
         self.contentWidget.hide()
 
     def resetChat(self):
         url = "https://data.test.meituan.com/pc/v1/conversation/reset"
-        headers = {"Content-Type": "application/json"}
-        data = {"userId": self.userId, "agentId": self.agentId}
+        headers = { "Content-Type": "application/json" }
+        data = { "userId": self.userId, "agentId": self.agentId }
         response = requests.post(url, json=data, headers=headers)
-        print(response)
         self.level = 1
         self.pet.level = 1
         self.pet.defaultAction()
         self.textEdit.setText("")
         self.replyView.setText("")
         self.replyView.hide()
+        self.intimacy = 0
+        self.maxLevel = 1
+        self.resetSuccessView.show()
+        self.resetThread = ResetTimer()
+        self.resetThread.complete.connect(self.hideResetMessage)
+        self.resetThread.start()
+    def hideResetMessage(self):
+        self.resetSuccessView.hide()
 
     def onClickPlay(self):
         print("onClickPlay")
         self.contentWidget.hide()
-        self.gameWidget = SetupGameWidget(
-            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-        )
         self.gameWidget.lower()
         self.gameWidget.show()
         self.hideBtns()
@@ -413,17 +520,28 @@ class DesktopPet(QMainWindow):
 
     def onClickProfile(self):
         print("onClickProfile")
-        self.profileWidget = ProfileWidget(
-            parent=self, flags=Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-        )
+        self.upgradeView.hide()
         self.profileWidget.lower()
         self.profileWidget.show()
+        self.profileWidget.maxLevel = self.maxLevel
+        self.intimacy = self.intimacy
+        self.profileWidget.updateUI()
         self.hideBtns()
         self.contentWidget.hide()
 
+    def switchTTS(self):
+        if self.tts.open:
+            self.tts.open = False
+            self.ttsButton.setIcon(QIcon(str(self.imgDir / "tts_off.png")))
+            self.tts.stopTTS()
+        else:
+            self.tts.open = True
+            self.ttsButton.setIcon(QIcon(str(self.imgDir / "tts_on.png")))
+
 
 class PetWidget(QWidget):
-    def __init__(self, parent: QWidget | None, level) -> None:
+    spActions = ["belly1", "blink1", "huge1", "laugh1", "foot1", "tail1", "think1", "wink1"]
+    def __init__(self, parent: QWidget | None, level, maxLevel) -> None:
         super().__init__(parent)
         self.level = level
         levelStr = f"level{self.level}"
@@ -455,9 +573,9 @@ class PetWidget(QWidget):
         else:
             self.setPix(str(self.imgDir / settings.INIT_PICTURE))
 
-    def upgrade(self):
-        self.doAction(f"upgrade{self.level}")
-        self.level += 1
+    def upgrade(self, level):
+        self.level = level
+        self.doAction(f"upgrade{self.level - 1}")
 
     def defaultAction(self):
         self.currentMovie = None
@@ -484,6 +602,10 @@ class PetWidget(QWidget):
     def moveAction(self):
         if self.level == 1:
             self.doAction("move1")
+    
+    def spAction(self, action):
+        if self.level == 1:
+            self.doAction(f"{action}1")
 
     def doAction(self, state):
         print(state)
@@ -525,6 +647,10 @@ class PetWidget(QWidget):
                 self.speakTimer += 1
                 self.currentI = 0
                 self.actionTimer.start()
+            elif self.state in self.spActions:
+                # 聊天随机动作结束后回默认状态
+                time.sleep(1)
+                self.defaultAction()
 
 
 class ActionThread(QThread):
@@ -577,3 +703,42 @@ class CustomTextEdit(QTextEdit):
             self.parent().parent().sendMessage()
         else:
             super().keyPressEvent(event)
+
+rec = None
+recording = False
+class RecordThread(QThread):
+    complete = pyqtSignal(str)
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+
+    def run(self):
+        global rec, recording
+        rec = None
+        recording = True
+        rec = core.asr_test.record_audio(4)
+        recording = False
+
+class TranscribeThread(QThread):
+    complete = pyqtSignal(str)
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+
+    def run(self):
+        global rec, recording
+        while recording:
+            self.sleep(1)
+        core.asr_test.save_audio("D:\\output.wav", rec, 44100)
+        text = core.asr_test.transcribe_audio("D:\\output.wav")
+        if text:
+            self.complete.emit(text)
+
+class ResetTimer(QThread):
+    complete = pyqtSignal()
+
+    def run(self):
+        self.sleep(2)
+        self.complete.emit()
